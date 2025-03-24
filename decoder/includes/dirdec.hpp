@@ -14,7 +14,7 @@
 #pragma comment(lib, "user32")
 #pragma comment(lib, "Shell32")
 
-#define PROGNAME L"DirEnc"
+#define PROGNAME L"DirDec"
 #define PROGCREDIT L"coded by @msitni"
 #define WNDWIDTH 1000
 #define WNDHEIGHT 600

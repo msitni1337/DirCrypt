@@ -1,4 +1,4 @@
-#include "direnc.hpp"
+#include "dirdec.hpp"
 
 void ListFilesInDirectory(HWND hwnd, const std::wstring &directory, std::wstring &EditText, std::wstring Indent)
 {

@@ -1,4 +1,4 @@
-#include "direnc.hpp"
+#include "dircrypt.hpp"
 
 void DisplayErrorBox(HWND hwnd, LPTSTR lpszFunction)
 {

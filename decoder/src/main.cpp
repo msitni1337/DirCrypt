@@ -1,4 +1,4 @@
-#include "direnc.hpp"
+#include "dircrypt.hpp"
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {

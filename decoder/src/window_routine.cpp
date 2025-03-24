@@ -1,4 +1,4 @@
-#include "direnc.hpp"
+#include "dircrypt.hpp"
 #define ENC_BTN 200
 #define EDT_BOX 300
 
