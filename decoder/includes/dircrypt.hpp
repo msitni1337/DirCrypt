@@ -21,12 +21,12 @@
 #pragma comment(lib, "shell32")
 #pragma comment(lib, "advapi32")
 
-#define PROGNAME   L"DirCrypt - Encoder"
+#define PROGNAME   L"DirCrypt - Decoder"
 #define PROGCREDIT L"coded by @msitni"
 #define WNDWIDTH   1000
 #define WNDHEIGHT  600
 
-#define ENCRYPT_NOTIF_ID 100
+#define DECRYPT_NOTIF_ID 100
 
 bool DisplayErrorBox(HWND hwnd, std::wstring message, DWORD error);
 LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

@@ -1,10 +1,9 @@
 #include "DirEncryptor.hpp"
 
-#define ENCRYPT_NOTIF_ID 100
-#define ENCRYPT_BTN_ID   200
-#define LIST_VIEW_ID     300
-#define IDC_FILELIST     101
-#define IDS_PATHTOFILL   102
+#define ENCRYPT_BTN_ID 200
+#define LIST_VIEW_ID   300
+#define IDC_FILELIST   101
+#define IDS_PATHTOFILL 102
 
 static HWND hTreeView;
 static HWND hButton;
@@ -17,6 +16,7 @@ static DirTreeRoot TreeRoot;
 
 DWORD WINAPI EncryptionThread(LPVOID hwnd)
 {
+    SendMessage(hwndPB, PBM_SETPOS, 0, 0);
     int _len = Edit_GetTextLength(hwndEdit);
     if (_len < 8 || _len > 255)
     {
@@ -50,36 +50,38 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
     switch (uMsg)
     {
     case WM_CREATE: {
+        HFONT hfDefault;
+        hfDefault = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         {
-            HFONT hfDefault;
             hTreeView = CreateWindowEx(
                 0, WC_TREEVIEW, L"Tree View",
                 WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | WS_CHILD | WS_BORDER | ES_AUTOVSCROLL |
                     ES_AUTOHSCROLL | TVS_HASLINES,
-                0, 0, WNDWIDTH - 20, WNDHEIGHT - 100, hwnd, (HMENU)LIST_VIEW_ID,
+                0, 0, WNDWIDTH - 16, WNDHEIGHT - 100, hwnd, (HMENU)LIST_VIEW_ID,
                 (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
             );
             if (hTreeView == NULL)
                 MessageBox(hwnd, L"Could not create edit box.", L"Error", MB_OK | MB_ICONERROR);
-            hfDefault = (HFONT)GetStockObject(OEM_FIXED_FONT);
             SendMessage(hTreeView, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
-            CreateWindowEx(
-                0, L"Static", L"Password:", WS_CHILD | WS_VISIBLE, 10, WNDHEIGHT - 95, 175, 25,
-                hwnd, 0, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+            HWND handle = CreateWindowEx(
+                0, L"Static", L"Password:", WS_CHILD | WS_VISIBLE, 5, WNDHEIGHT - 95, 180, 50, hwnd,
+                0, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
             );
+            SendMessage(handle, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
             hwndEdit = CreateWindowEx(
                 0, L"EDIT", // predefined class
                 NULL,       // no window title
-                WS_CHILD | WS_VISIBLE | ES_LEFT | ES_PASSWORD, 10, WNDHEIGHT - 72, 175,
+                WS_CHILD | WS_VISIBLE | ES_LEFT | ES_PASSWORD, 10, WNDHEIGHT - 72, 170,
                 25,       // set size in WM_SIZE message
                 hwnd,     // parent window
                 (HMENU)0, // edit control ID
                 (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
             );
+            SendMessage(hwndEdit, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
             hButton = CreateWindowEx(
@@ -95,9 +97,7 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
                 (HMENU)ENCRYPT_BTN_ID,                                 // Button ID.
                 (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
             );
-
-            if (hButton == NULL)
-                MessageBox(hwnd, L"Could not create button.", L"Error", MB_OK | MB_ICONERROR);
+            SendMessage(hButton, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
             hwndPB = CreateWindowEx(
@@ -105,6 +105,7 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
                 WNDWIDTH - 360, 25, hwnd, (HMENU)0,
                 (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
             );
+            SendMessage(hwndPB, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
             SendMessage(hwndPB, PBM_SETSTEP, 1, 0);
         }
         break;
@@ -156,12 +157,12 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         PAINTSTRUCT ps;
         HDC         hdc = BeginPaint(hwnd, &ps);
 
-        FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 2));
-        ps.rcPaint.top    = 0;
-        ps.rcPaint.bottom = 100;
-        ps.rcPaint.left   = 0;
-        ps.rcPaint.right  = 100;
-        FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_HIGHLIGHT));
+        // FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 2));
+        // ps.rcPaint.top    = 0;
+        // ps.rcPaint.bottom = 100;
+        // ps.rcPaint.left   = 0;
+        // ps.rcPaint.right  = 100;
+        // FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_HIGHLIGHT));
 
         EndPaint(hwnd, &ps);
         break;

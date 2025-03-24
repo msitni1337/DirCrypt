@@ -2,25 +2,26 @@
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
-    WNDCLASSEX wc;
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WindowProcRoutine;
-    wc.cbClsExtra = 0;
-    wc.cbWndExtra = 0;
-    wc.hInstance = hInstance;
-    wc.hIcon = LoadIcon(NULL, IDI_WINLOGO);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-    wc.lpszMenuName = NULL;
-    wc.lpszClassName = PROGNAME L"_Class";
-    wc.hIconSm = LoadIcon(NULL, IDI_WINLOGO);
+    InitCommonControls();
+    WNDCLASSEX wc    = {};
+    wc.cbSize        = sizeof(wc);
+    wc.style         = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc   = WindowProcRoutine;
+    wc.cbClsExtra    = 0;
+    wc.cbWndExtra    = 0;
+    wc.hInstance     = hInstance;
+    wc.hIcon         = LoadIcon(NULL, IDI_WINLOGO);
+    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszMenuName  = NULL;
+    wc.lpszClassName = PROGNAME L"_ClassWindow";
+    wc.hIconSm       = LoadIcon(NULL, IDI_WINLOGO);
     RegisterClassEx(&wc);
     // Create the window.
     HWND hwnd = CreateWindowEx(
-        WS_EX_ACCEPTFILES,                                                           // Optional window styles.
-        PROGNAME L"_Class",                                                          // Window class
-        PROGNAME L" " PROGCREDIT,                                                    // Window text
+        WS_EX_ACCEPTFILES,                                          // Optional window styles.
+        PROGNAME L"_ClassWindow",                                   // Window class
+        PROGNAME L" | " PROGCREDIT,                                 // Window text
         (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX), // Window style
 
         // Size and position

@@ -1,9 +1,9 @@
-#include "DirEncryptor.hpp"
+#include "DirDecryptor.hpp"
 
 #define KEYLENGTH          0x01000000 // 256 bits key length
-#define ENCRYPT_BLOCK_SIZE 16         // 32 bit block size
+#define DECRYPT_BLOCK_SIZE 16         // 32 bit block size
 
-DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
+DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
 {
     HCRYPTHASH hHash = NULL;
     {
@@ -43,15 +43,15 @@ DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
         return;
     }
     //---------------------------------------------------------------
-    // Determine the number of bytes to encrypt at a time.
-    // This must be a multiple of ENCRYPT_BLOCK_SIZE.
-    // ENCRYPT_BLOCK_SIZE is set by a #define statement.
-    _BlockLen = 1000 - 1000 % ENCRYPT_BLOCK_SIZE;
+    // Determine the number of bytes to decrypt at a time.
+    // This must be a multiple of DECRYPT_BLOCK_SIZE.
+    // DECRYPT_BLOCK_SIZE is set by a #define statement.
+    _BlockLen = 1000 - 1000 % DECRYPT_BLOCK_SIZE;
     //---------------------------------------------------------------
     // Determine the block size. If a block cipher is used,
     // it must have room for an extra block.
-    if (ENCRYPT_BLOCK_SIZE > 1)
-        _BufferLen = _BlockLen + ENCRYPT_BLOCK_SIZE;
+    if (DECRYPT_BLOCK_SIZE > 1)
+        _BufferLen = _BlockLen + DECRYPT_BLOCK_SIZE;
     else
         _BufferLen = _BlockLen;
     //---------------------------------------------------------------
@@ -64,7 +64,7 @@ DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
     _ready = true;
 }
 
-DirEncryptor::~DirEncryptor()
+DirDecryptor::~DirDecryptor()
 {
     //---------------------------------------------------------------
     // Release the session key.
@@ -80,7 +80,7 @@ DirEncryptor::~DirEncryptor()
         free(_Buffer);
 }
 
-bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstring DestinationFile)
+bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstring DestinationFile)
 {
     //---------------------------------------------------------------
     // Declare and initialize local variables.
@@ -110,7 +110,7 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
         }
     }
     //---------------------------------------------------------------
-    // Encryption loop.
+    // Decryption loop.
     bool fEOF = false;
     {
         DWORD Count;
@@ -126,15 +126,15 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
             if (Count < _BlockLen)
                 fEOF = true;
             //-----------------------------------------------------------
-            // Encrypt data.
-            if (!CryptEncrypt(_Key, NULL, fEOF, 0, _Buffer, &Count, _BufferLen))
+            // Decrypt data.
+            if (!CryptDecrypt(_Key, NULL, fEOF, 0, _Buffer, &Count))
             {
-                DisplayErrorBox(_hwnd, L"Error during CryptEncrypt. \n", GetLastError());
+                DisplayErrorBox(_hwnd, L"Error during CryptDecrypt. \n", GetLastError());
                 fEOF = false;
                 break;
             }
             //-----------------------------------------------------------
-            // Write the encrypted data to the destination file.
+            // Write the decrypted data to the destination file.
             if (!WriteFile(hDestinationFile, _Buffer, Count, &Count, NULL))
             {
                 DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
@@ -149,28 +149,28 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
         CloseHandle(hSourceFile);
     if (hDestinationFile)
         CloseHandle(hDestinationFile);
-    SendMessage((HWND)_hwnd, WM_COMMAND, ENCRYPT_NOTIF_ID, 0);
+    SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
     return fEOF;
 }
 
-bool DirEncryptor::isReady() const
+bool DirDecryptor::isReady() const
 {
     return _ready;
 }
 
-bool DirEncryptor::encryptTree(const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot)
+bool DirDecryptor::decryptTree(const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot)
 {
     if (!_ready)
-        return DisplayErrorBox(_hwnd, L"Encryptor not ready", ERROR_NOT_READY);
+        return DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
     DWORD dwAttrib = GetFileAttributes(output_dir.c_str());
     if (dwAttrib == INVALID_FILE_ATTRIBUTES || !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
         return DisplayErrorBox(_hwnd, L"Invalid Directory Path", GetLastError());
     if (!PathIsDirectoryEmpty(output_dir.c_str()))
         return DisplayErrorBox(_hwnd, L"Directory Not Empty", GetLastError());
-    return RecurseEncryptTree(output_dir, dirTreeRoot);
+    return RecurseDecryptTree(output_dir, dirTreeRoot);
 }
 
-bool DirEncryptor::RecurseEncryptTree(
+bool DirDecryptor::RecurseDecryptTree(
     const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot
 )
 {
@@ -183,13 +183,13 @@ bool DirEncryptor::RecurseEncryptTree(
         if (!dirTreeRoot.directories[i].directories.size() &&
             !dirTreeRoot.directories[i].files.size())
             continue;
-        if (!RecurseEncryptTree(file_path, dirTreeRoot.directories[i]))
+        if (!RecurseDecryptTree(file_path, dirTreeRoot.directories[i]))
             return false;
     }
     for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
     {
         file_path = dirTreeRoot.directory_path + L"\\" + dirTreeRoot.files[i];
-        if (!DirEncryptFile(file_path, output_dir + L"\\" + dirTreeRoot.files[i]))
+        if (!DirDecryptFile(file_path, output_dir + L"\\" + dirTreeRoot.files[i]))
             return false;
     }
     return true;

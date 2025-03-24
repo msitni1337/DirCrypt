@@ -1,7 +1,7 @@
 SRC=.\src\*.cpp
 INC=includes
 OBJ_DIR=.\.obj
-NAME=dirdec.exe
+NAME=DirCrypt.exe
 
 all: ${NAME}
 
