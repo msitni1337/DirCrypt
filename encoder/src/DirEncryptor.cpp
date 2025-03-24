@@ -147,6 +147,7 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
         CloseHandle(hSourceFile);
     if (hDestinationFile)
         CloseHandle(hDestinationFile);
+    SendMessage((HWND)_hwnd, WM_COMMAND, ENCRYPT_NOTIF_ID, 0);
     return fEOF;
 }
 

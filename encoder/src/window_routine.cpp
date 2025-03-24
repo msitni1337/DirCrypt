@@ -1,15 +1,49 @@
 #include "DirEncryptor.hpp"
 
-#define ENCRYPT_BTN_ID 200
-#define LIST_VIEW_ID   300
-#define IDC_FILELIST   101
-#define IDS_PATHTOFILL 102
+#define ENCRYPT_NOTIF_ID 100
+#define ENCRYPT_BTN_ID   200
+#define LIST_VIEW_ID     300
+#define IDC_FILELIST     101
+#define IDS_PATHTOFILL   102
 
 static HWND hTreeView;
 static HWND hButton;
-TCHAR       DraggedFileName[MAX_PATH];
+static HWND hwndEdit;
+static HWND hwndPB;
+
+TCHAR DraggedFileName[MAX_PATH];
 
 static DirTreeRoot TreeRoot;
+
+DWORD WINAPI EncryptionThread(LPVOID hwnd)
+{
+    int _len = Edit_GetTextLength(hwndEdit);
+    if (_len < 8 || _len > 255)
+    {
+        MessageBox((HWND)hwnd, L"Enter password between 8 and 255 chars long.", PROGNAME, MB_OK);
+        return 0;
+    }
+    WCHAR buff[256];
+    _len = Edit_GetText(hwndEdit, buff, 256);
+    if (_len < 8 || _len > 255)
+    {
+        MessageBox((HWND)hwnd, L"Enter password between 8 and 255 chars long.", PROGNAME, MB_OK);
+        return 0;
+    }
+    BROWSEINFOW dialogInfo = {0};
+    dialogInfo.hwndOwner   = (HWND)hwnd;
+    dialogInfo.lpszTitle   = L"Select Output folder";
+    dialogInfo.ulFlags     = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_RETURNFSANCESTORS;
+    ITEMIDLIST* pidl       = SHBrowseForFolder(&dialogInfo);
+    if (pidl == NULL)
+        return 0;
+    WCHAR dest_path[MAX_PATH];
+    SHGetPathFromIDList(pidl, dest_path);
+    DirEncryptor dirEncryptor(buff, (HWND)hwnd);
+    if (dirEncryptor.isReady() && dirEncryptor.encryptTree(dest_path, TreeRoot))
+        MessageBox((HWND)hwnd, L"Encryption success.", PROGNAME, MB_OK);
+    return 0;
+}
 
 LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -31,23 +65,47 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
             SendMessage(hTreeView, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
+            CreateWindowEx(
+                0, L"Static", L"Password:", WS_CHILD | WS_VISIBLE, 10, WNDHEIGHT - 95, 175, 25,
+                hwnd, 0, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+            );
+        }
+        {
+            hwndEdit = CreateWindowEx(
+                0, L"EDIT", // predefined class
+                NULL,       // no window title
+                WS_CHILD | WS_VISIBLE | ES_LEFT | ES_PASSWORD, 10, WNDHEIGHT - 72, 175,
+                25,       // set size in WM_SIZE message
+                hwnd,     // parent window
+                (HMENU)0, // edit control ID
+                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+            );
+        }
+        {
             hButton = CreateWindowEx(
                 0,                                                     // Optional window styles.
                 L"BUTTON",                                             // Predefined class; Button.
                 L"Encrypt",                                            // Button text.
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, // Styles.
-                10,                                                    // x position.
+                200,                                                   // x position.
                 WNDHEIGHT - 95,                                        // y position.
                 100,                                                   // Button width.
                 50,                                                    // Button height.
                 hwnd,                                                  // Parent window.
                 (HMENU)ENCRYPT_BTN_ID,                                 // Button ID.
-                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE),
-                NULL
-            ); // Pointer not needed.
+                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+            );
 
             if (hButton == NULL)
                 MessageBox(hwnd, L"Could not create button.", L"Error", MB_OK | MB_ICONERROR);
+        }
+        {
+            hwndPB = CreateWindowEx(
+                0, PROGRESS_CLASS, (LPTSTR)NULL, WS_CHILD | WS_VISIBLE, 310, WNDHEIGHT - 85,
+                WNDWIDTH - 360, 25, hwnd, (HMENU)0,
+                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+            );
+            SendMessage(hwndPB, PBM_SETSTEP, 1, 0);
         }
         break;
     }
@@ -62,6 +120,7 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         DragFinish(hDrop);
         DirTree dirTree(DraggedFileName, hTreeView);
         TreeRoot = dirTree.getTreeRoot();
+        SendMessage(hwndPB, PBM_SETRANGE32, 0, TreeRoot.files_count);
         break;
     }
     case WM_DESTROY: {
@@ -72,18 +131,22 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         switch (LOWORD(wParam))
         {
         case ENCRYPT_BTN_ID: {
-            WCHAR       dest[MAX_PATH];
-            BROWSEINFOW dialogInfo = {0};
-            dialogInfo.hwndOwner   = hwnd;
-            dialogInfo.lpszTitle   = L"Select Output folder";
-            dialogInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_RETURNFSANCESTORS;
-            ITEMIDLIST* pidl   = SHBrowseForFolder(&dialogInfo);
-            if (pidl == NULL)
+            DWORD  ThreadId;
+            HANDLE Thread = CreateThread(
+                NULL,             // default security attributes
+                0,                // use default stack size
+                EncryptionThread, // thread function name
+                hwnd,             // argument to thread function
+                0,                // use default creation flags
+                &ThreadId
+            );
+            if (Thread == NULL)
                 break;
-            SHGetPathFromIDList(pidl, dest);
-            DirEncryptor dirEncryptor(L"123", hwnd);
-            if (dirEncryptor.isReady() && dirEncryptor.encryptTree(dest, TreeRoot))
-                MessageBox(hwnd, L"Encryption success.", PROGNAME, MB_OK);
+            CloseHandle(Thread);
+            break;
+        }
+        case ENCRYPT_NOTIF_ID: {
+            SendMessage(hwndPB, PBM_STEPIT, 0, 0);
             break;
         }
         }

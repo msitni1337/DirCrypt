@@ -5,6 +5,7 @@ DirTree::DirTree(const std::wstring root, HWND TreeViewUIHandler)
 {
     TreeView_DeleteAllItems(TreeViewUIHandler);
     _DirTreeRoot.directory_path = root;
+    _DirTreeRoot.files_count    = 0;
     if (RecurseDirSearch(root, _DirTreeRoot) == false)
         InsertToTreeView(L"Analyzing path: [" + root + L"] failed.", TVI_ROOT, TVI_FIRST);
     else
@@ -56,7 +57,10 @@ bool DirTree::RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoo
                     }
                 }
                 else
+                {
                     dirTreeRoot.files.push_back(ffd.cFileName);
+                    _DirTreeRoot.files_count++;
+                }
             }
         } while (FindNextFile(hFind, &ffd) != 0);
         dwError = GetLastError();

@@ -4,6 +4,7 @@
 #endif
 
 #include <windows.h>
+#include <windowsx.h>
 #include <CommCtrl.h>
 #include <shlobj_core.h>
 #include <stdio.h>
@@ -24,6 +25,8 @@
 #define PROGCREDIT L"coded by @msitni"
 #define WNDWIDTH   1000
 #define WNDHEIGHT  600
+
+#define ENCRYPT_NOTIF_ID 100
 
 bool DisplayErrorBox(HWND hwnd, std::wstring message, DWORD error);
 LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
