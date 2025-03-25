@@ -13,6 +13,7 @@ private:
     PBYTE        _Buffer    = NULL;
     HCRYPTKEY    _Key       = NULL;
     WCHAR        _KeyHash[HASHLEN * 2 + 1];
+    BYTE         _IV[ENCRYPT_BLOCK_SIZE];
     DWORD        _BlockLen;
     DWORD        _BufferLen;
     HWND         _hwnd;

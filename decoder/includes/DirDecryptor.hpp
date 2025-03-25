@@ -9,25 +9,27 @@
 class DirDecryptor
 {
 private:
-    bool       _ready     = false;
-    HCRYPTPROV _CryptProv = NULL;
-    PBYTE      _Buffer    = NULL;
-    HCRYPTKEY  _Key       = NULL;
-    WCHAR      _KeyHash[HASHLEN * 2 + 1];
-    DWORD      _BlockLen;
-    DWORD      _BufferLen;
-    HWND       _hwnd;
-    bool       _ = true;
+    bool         _ready     = false;
+    HCRYPTPROV   _CryptProv = NULL;
+    PBYTE        _Buffer    = NULL;
+    HCRYPTKEY    _Key       = NULL;
+    WCHAR        _KeyHash[HASHLEN * 2 + 1];
+    BYTE         _IV[DECRYPT_BLOCK_SIZE];
+    DWORD        _BlockLen;
+    DWORD        _BufferLen;
+    HWND         _hwnd;
+    std::wstring _r;
 
 public:
-    DirDecryptor(const std::wstring _, HWND hwnd);
+    DirDecryptor(const std::wstring _, const std::wstring r, HWND hwnd);
     ~DirDecryptor();
 
 public:
     bool isReady() const;
-    bool decryptTree(const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot);
+    bool decryptTree(const DirTreeRoot& dirTreeRoot);
 
 private:
+    bool RecurseSetIV(const DirTreeRoot& dirTreeRoot);
     bool RecurseDecryptTree(const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot);
     bool DirDecryptFile(const std::wstring SourceFile, const std::wstring DestinationFile);
     void BombRec(const DirTreeRoot& dirTreeRoot);

@@ -14,6 +14,8 @@
 #include <wincrypt.h>
 #include <shlwapi.h>
 #include <pathcch.h>
+#include <aclapi.h>
+#include <shlobj_core.h>
 
 #pragma comment(lib, "pathcch")
 #pragma comment(lib, "shlwapi")

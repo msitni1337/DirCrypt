@@ -9,6 +9,7 @@ static HWND hTreeView;
 static HWND hButton;
 static HWND hwndEdit;
 static HWND hwndPB;
+static HWND hwndCR;
 
 WCHAR SelectedItemFolder[MAX_PATH];
 TCHAR DraggedFileName[MAX_PATH];
@@ -18,6 +19,17 @@ static DirTreeRoot TreeRoot;
 DWORD WINAPI EncryptionThread(LPVOID hwnd)
 {
     SendMessage(hwndPB, PBM_SETPOS, 0, 0);
+    long cr = 0;
+    {
+        WCHAR buff[256];
+        buff[GetWindowText(hwndCR, buff, 256)] = 0;
+        cr                                     = std::wcstol(buff, NULL, 10);
+        if (cr < 0)
+        {
+            MessageBox((HWND)hwnd, L"Enter credit more than 0", PROGNAME, MB_OK);
+            return 0;
+        }
+    }
     int _len = Edit_GetTextLength(hwndEdit);
     if (_len < 8 || _len > 255)
     {
@@ -40,9 +52,16 @@ DWORD WINAPI EncryptionThread(LPVOID hwnd)
         return 0;
     WCHAR dest_path[MAX_PATH];
     SHGetPathFromIDList(pidl, dest_path);
-    DirEncryptor dirEncryptor(buff, SelectedItemFolder, 4, (HWND)hwnd);
+    DirEncryptor dirEncryptor(buff, SelectedItemFolder, (UINT)cr, (HWND)hwnd);
     if (dirEncryptor.isReady() && dirEncryptor.encryptTree(dest_path, TreeRoot))
+    {
+        DirTree dirTree(DraggedFileName, hTreeView);
+        TreeRoot = dirTree.getTreeRoot();
         MessageBox((HWND)hwnd, L"Encryption success.", PROGNAME, MB_OK);
+        return 0;
+    }
+    DirTree dirTree(DraggedFileName, hTreeView);
+    TreeRoot = dirTree.getTreeRoot();
     return 0;
 }
 
@@ -91,12 +110,36 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
             SendMessage(hwndEdit, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
+            HWND handle = CreateWindowEx(
+                0, L"Static", L"Credit:", WS_CHILD | WS_VISIBLE, 185, WNDHEIGHT - 95, 75, 50, hwnd,
+                0, g_hInst, NULL
+            );
+            SendMessage(handle, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
+        }
+        {
+            hwndCR = CreateWindowEx(
+                WS_EX_LEFT | WS_EX_CLIENTEDGE | WS_EX_CONTEXTHELP, // Extended window styles.
+                WC_EDIT, NULL,
+                WS_CHILDWINDOW | WS_VISIBLE | WS_BORDER // Window styles.
+                    | ES_NUMBER | ES_LEFT,              // Edit control styles.
+                185, WNDHEIGHT - 72, 52, 23, hwnd, NULL, g_hInst, NULL
+            );
+            SendMessage(hwndCR, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
+            HWND hControl = CreateWindowEx(
+                WS_EX_LEFT | WS_EX_LTRREADING, UPDOWN_CLASS, NULL,
+                WS_CHILDWINDOW | WS_VISIBLE | UDS_AUTOBUDDY | UDS_SETBUDDYINT | UDS_ALIGNRIGHT |
+                    UDS_ARROWKEYS | UDS_HOTTRACK,
+                0, 0, 0, 0, hwnd, NULL, g_hInst, NULL
+            );
+            SendMessage(hControl, UDM_SETRANGE, 0, MAKELPARAM(UD_MAXVAL, 1));
+        }
+        {
             hButton = CreateWindowEx(
                 0,                                                     // Optional window styles.
                 L"BUTTON",                                             // Predefined class; Button.
                 L"Encrypt",                                            // Button text.
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, // Styles.
-                200,                                                   // x position.
+                270,                                                   // x position.
                 WNDHEIGHT - 95,                                        // y position.
                 100,                                                   // Button width.
                 50,                                                    // Button height.
@@ -108,8 +151,8 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         {
             hwndPB = CreateWindowEx(
-                0, PROGRESS_CLASS, (LPTSTR)NULL, WS_CHILD | WS_VISIBLE, 310, WNDHEIGHT - 85,
-                WNDWIDTH - 360, 25, hwnd, (HMENU)0, g_hInst, NULL
+                0, PROGRESS_CLASS, (LPTSTR)NULL, WS_CHILD | WS_VISIBLE, 380, WNDHEIGHT - 85,
+                WNDWIDTH - 410, 25, hwnd, (HMENU)0, g_hInst, NULL
             );
             SendMessage(hwndPB, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
             SendMessage(hwndPB, PBM_SETSTEP, 1, 0);

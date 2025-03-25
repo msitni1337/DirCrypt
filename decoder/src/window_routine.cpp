@@ -31,18 +31,16 @@ DWORD WINAPI DecryptionThread(LPVOID hwnd)
         MessageBox((HWND)hwnd, L"Enter password between 8 and 255 chars long.", PROGNAME, MB_OK);
         return 0;
     }
-    BROWSEINFOW dialogInfo = {0};
-    dialogInfo.hwndOwner   = (HWND)hwnd;
-    dialogInfo.lpszTitle   = L"Select Output folder";
-    dialogInfo.ulFlags     = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_RETURNFSANCESTORS;
-    ITEMIDLIST* pidl       = SHBrowseForFolder(&dialogInfo);
-    if (pidl == NULL)
-        return 0;
-    WCHAR dest_path[MAX_PATH];
-    SHGetPathFromIDList(pidl, dest_path);
-    DirDecryptor dirDecryptor(buff, (HWND)hwnd);
-    if (dirDecryptor.isReady() && dirDecryptor.decryptTree(dest_path, TreeRoot))
+    DirDecryptor dirDecryptor(buff, SelectedItem, (HWND)hwnd);
+    if (dirDecryptor.isReady() && dirDecryptor.decryptTree(TreeRoot))
+    {
+        DirTree dirTree(DraggedFileName, hTreeView);
+        TreeRoot = dirTree.getTreeRoot();
         MessageBox((HWND)hwnd, L"Decryption success.", PROGNAME, MB_OK);
+        return 0;
+    }
+    DirTree dirTree(DraggedFileName, hTreeView);
+    TreeRoot = dirTree.getTreeRoot();
     return 0;
 }
 
@@ -109,7 +107,7 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         {
             hwndPB = CreateWindowEx(
                 0, PROGRESS_CLASS, (LPTSTR)NULL, WS_CHILD | WS_VISIBLE, 310, WNDHEIGHT - 85,
-                WNDWIDTH - 360, 25, hwnd, (HMENU)0, g_hInst, NULL
+                WNDWIDTH - 340, 25, hwnd, (HMENU)0, g_hInst, NULL
             );
             SendMessage(hwndPB, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
             SendMessage(hwndPB, PBM_SETSTEP, 1, 0);

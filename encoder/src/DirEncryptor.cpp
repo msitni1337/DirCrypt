@@ -9,7 +9,9 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
     {
         //---------------------------------------------------------------
         // Get the handle to the default provider.
-        if (!(CryptAcquireContext(&_CryptProv, NULL, MS_ENH_RSA_AES_PROV, PROV_RSA_AES, 0)))
+        if (!(CryptAcquireContext(
+                &_CryptProv, NULL, MS_ENH_RSA_AES_PROV, PROV_RSA_AES, CRYPT_VERIFYCONTEXT
+            )))
         {
             DisplayErrorBox(hwnd, L"Error during CryptAcquireContext!\n", GetLastError());
             return;
@@ -37,11 +39,10 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
         {
             for (DWORD i = 0; i < cbHash; i++)
             {
-                _KeyHash[i]     = HEXSTR[rgbHash[i] >> 4];
-                _KeyHash[i + 1] = HEXSTR[rgbHash[i] & 0xf];
+                _KeyHash[i * 2]     = HEXSTR[rgbHash[i] >> 4];
+                _KeyHash[i * 2 + 1] = HEXSTR[rgbHash[i] & 0xf];
             }
             _KeyHash[cbHash * 2] = 0;
-            MessageBox(hwnd, _KeyHash, PROGNAME L"Key Hash", MB_OK);
         }
         //-----------------------------------------------------------
         // Derive a session key from the hash object.
@@ -50,7 +51,16 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
             DisplayErrorBox(hwnd, L"Error during CryptDeriveKey From Password!\n", GetLastError());
             return;
         }
-        cbHash = HASHLEN;
+        if (!CryptGenRandom(_CryptProv, ENCRYPT_BLOCK_SIZE, _IV))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptGenRandom\n", GetLastError());
+            return;
+        }
+        if (!CryptSetKeyParam(_Key, KP_IV, _IV, 0))
+        {
+            DisplayErrorBox(_hwnd, L"Error resetting IV.\n", GetLastError());
+            return;
+        }
         if (!(CryptDestroyHash(hHash)))
         {
             DisplayErrorBox(hwnd, L"Error during CryptDestroyHash.\n", GetLastError());
@@ -61,7 +71,9 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
             DisplayErrorBox(hwnd, L"Error during CryptCreateHash!\n", GetLastError());
             return;
         }
-        if (!(CryptHashData(hHash, (BYTE*)_KeyHash, cbHash * 2, 0)))
+        cbHash           = HASHLEN;
+        DWORD keyHashLen = wcslen(_KeyHash) * sizeof(WCHAR);
+        if (!(CryptHashData(hHash, (BYTE*)_KeyHash, keyHashLen, 0)))
         {
             DisplayErrorBox(hwnd, L"Error during CryptHashData. \n", GetLastError());
             return;
@@ -74,11 +86,10 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
         {
             for (DWORD i = 0; i < cbHash; i++)
             {
-                _KeyHash[i]     = HEXSTR[rgbHash[i] >> 4];
-                _KeyHash[i + 1] = HEXSTR[rgbHash[i] & 0xf];
+                _KeyHash[i * 2]     = HEXSTR[rgbHash[i] >> 4];
+                _KeyHash[i * 2 + 1] = HEXSTR[rgbHash[i] & 0xf];
             }
             _KeyHash[cbHash * 2] = 0;
-            MessageBox(hwnd, _KeyHash, PROGNAME L"Key Hash Hash", MB_OK);
         }
         if (!(CryptDestroyHash(hHash)))
         {
@@ -86,18 +97,8 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
             return;
         }
     }
-    //---------------------------------------------------------------
-    // Determine the number of bytes to encrypt at a time.
-    // This must be a multiple of ENCRYPT_BLOCK_SIZE.
-    // ENCRYPT_BLOCK_SIZE is set by a #define statement.
-    _BlockLen = 1000 - 1000 % ENCRYPT_BLOCK_SIZE;
-    //---------------------------------------------------------------
-    // Determine the block size. If a block cipher is used,
-    // it must have room for an extra block.
-    if (ENCRYPT_BLOCK_SIZE > 1)
-        _BufferLen = _BlockLen + ENCRYPT_BLOCK_SIZE;
-    else
-        _BufferLen = _BlockLen;
+    _BlockLen  = 1000 - 1000 % ENCRYPT_BLOCK_SIZE;
+    _BufferLen = _BlockLen + ENCRYPT_BLOCK_SIZE;
     //---------------------------------------------------------------
     // Allocate memory for reading file content.
     if (!(_Buffer = (BYTE*)malloc(_BufferLen)))
@@ -169,9 +170,12 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
             }
             if (Count < _BlockLen)
                 fEOF = true;
+            if (Count == 0)
+                break;
             //-----------------------------------------------------------
             // Encrypt data.
-            if (!CryptEncrypt(_Key, NULL, fEOF, 0, _Buffer, &Count, _BufferLen))
+            DWORD dwCount = Count;
+            if (!CryptEncrypt(_Key, NULL, fEOF, 0, _Buffer, &dwCount, _BufferLen))
             {
                 DisplayErrorBox(_hwnd, L"Error during CryptEncrypt. \n", GetLastError());
                 fEOF = false;
@@ -179,7 +183,7 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
             }
             //-----------------------------------------------------------
             // Write the encrypted data to the destination file.
-            if (!WriteFile(hDestinationFile, _Buffer, Count, &Count, NULL))
+            if (!WriteFile(hDestinationFile, _Buffer, dwCount, &Count, NULL))
             {
                 DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
                 fEOF = false;
@@ -236,6 +240,13 @@ bool DirEncryptor::RecurseEncryptTree(
             {
                 CloseHandle(hFile);
                 DisplayErrorBox(_hwnd, L"Error opening destination file!\n", GetLastError());
+                return false;
+            }
+            DWORD Count;
+            if (!WriteFile(hFile, _IV, ENCRYPT_BLOCK_SIZE, &Count, NULL))
+            {
+                DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
+                CloseHandle(hFile);
                 return false;
             }
             CloseHandle(hFile);
