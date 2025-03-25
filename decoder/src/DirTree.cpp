@@ -7,9 +7,12 @@ DirTree::DirTree(const std::wstring root, HWND TreeViewUIHandler)
     _DirTreeRoot.directory_path = root;
     _DirTreeRoot.files_count    = 0;
     if (RecurseDirSearch(root, _DirTreeRoot) == false)
-        InsertToTreeView(L"Analyzing path: [" + root + L"] failed.", TVI_ROOT, TVI_FIRST);
+        InsertToTreeView(L"Analyzing path: [" + root + L"] failed.", TVI_ROOT, TVI_FIRST, -1);
     else
+    {
         PopulateTreeView(_DirTreeRoot, TVI_ROOT);
+        _DirTreeRoot.directory_path = root;
+    }
 }
 
 DirTree::~DirTree() {}
@@ -58,7 +61,7 @@ bool DirTree::RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoo
                 }
                 else
                 {
-                    dirTreeRoot.files.push_back(ffd.cFileName);
+                    dirTreeRoot.files.push_back({root + L"\\" + ffd.cFileName, ffd.cFileName});
                     _DirTreeRoot.files_count++;
                 }
             }
@@ -81,28 +84,30 @@ void DirTree::PopulateTreeView(const DirTreeRoot& dirTreeRoot, HTREEITEM parent)
     {
         if (dirTreeRoot.directories[i].directories.size() ||
             dirTreeRoot.directories[i].files.size())
-            prev =
-                InsertToTreeView(dirTreeRoot.directories[i].directory_path + L" + ", parent, prev);
+            prev = InsertToTreeView(dirTreeRoot.directories[i].directory_path, parent, prev, -1);
         else
-            prev =
-                InsertToTreeView(dirTreeRoot.directories[i].directory_path + L" - ", parent, prev);
+            prev = InsertToTreeView(dirTreeRoot.directories[i].directory_path, parent, prev, -1);
         PopulateTreeView(dirTreeRoot.directories[i], prev);
     }
     for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
-        prev = InsertToTreeView(dirTreeRoot.files[i] + L" < ", parent, prev);
+        prev = InsertToTreeView(dirTreeRoot.files[i].first, parent, prev, 0);
 }
 
-HTREEITEM DirTree::InsertToTreeView(const std::wstring& text, HTREEITEM parent, HTREEITEM prev)
+HTREEITEM DirTree::InsertToTreeView(
+    const std::wstring& text, HTREEITEM parent, HTREEITEM prev, int img
+)
 {
     TVITEM         tvi;
     TVINSERTSTRUCT tvins;
-    tvi.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
+    tvi.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
     // Set the text of the item.
-    tvi.pszText    = (LPWSTR)text.c_str();
-    tvi.cchTextMax = sizeof(tvi.pszText) / sizeof(tvi.pszText[0]);
+    tvi.pszText        = (LPWSTR)text.c_str();
+    tvi.cchTextMax     = sizeof(tvi.pszText) / sizeof(tvi.pszText[0]);
+    tvi.iImage         = img;
+    tvi.iSelectedImage = -1;
     // Save the heading level in the item's application-defined
     // data area.
-    tvi.lParam         = (LPARAM)1;
+    // tvi.lParam         = (LPARAM)1;
     tvins.item         = tvi;
     tvins.hInsertAfter = prev;
     tvins.hParent      = parent;

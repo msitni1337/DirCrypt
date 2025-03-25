@@ -5,11 +5,11 @@
 
 struct DirTreeRoot
 {
-    size_t                    files_count;
-    std::wstring              directory_path;
-    std::wstring              directory_name;
-    std::vector<DirTreeRoot>  directories;
-    std::vector<std::wstring> files;
+    size_t                                              files_count;
+    std::wstring                                        directory_path;
+    std::wstring                                        directory_name;
+    std::vector<DirTreeRoot>                            directories;
+    std::vector<std::pair<std::wstring, std::wstring> > files;
 };
 
 class DirTree
@@ -31,5 +31,5 @@ private:
     DirTree&  operator=(const DirTree& _);
     bool      RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoot);
     void      PopulateTreeView(const DirTreeRoot& dirTreeRoot, HTREEITEM parent);
-    HTREEITEM InsertToTreeView(const std::wstring& text, HTREEITEM parent, HTREEITEM prev);
+    HTREEITEM InsertToTreeView(const std::wstring& text, HTREEITEM parent, HTREEITEM prev, int img);
 };

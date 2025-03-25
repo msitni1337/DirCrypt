@@ -15,3 +15,16 @@ bool DisplayErrorBox(HWND hwnd, std::wstring message, DWORD error)
         LocalFree(error_msg);
     return false;
 }
+
+bool IsPathOutsideAnother(HWND hwnd, const std::wstring& parent, const std::wstring& child)
+{
+    wchar_t fullParent[MAX_PATH];
+    wchar_t fullChild[MAX_PATH];
+    if (!GetFullPathNameW(parent.c_str(), MAX_PATH, fullParent, nullptr) ||
+        !GetFullPathNameW(child.c_str(), MAX_PATH, fullChild, nullptr))
+        return DisplayErrorBox(hwnd, L"Error", GetLastError());
+    if (PathCchAppend(fullParent, MAX_PATH, L"") != S_OK ||
+        PathCchAppend(fullChild, MAX_PATH, L"") != S_OK)
+        return DisplayErrorBox(hwnd, L"Error", GetLastError());
+    return (StrStrIW(fullChild, fullParent) == NULL);
+}

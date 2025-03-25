@@ -1,4 +1,5 @@
 #include "dircrypt.hpp"
+#include <iostream>
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
@@ -10,12 +11,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     wc.cbClsExtra    = 0;
     wc.cbWndExtra    = 0;
     wc.hInstance     = hInstance;
-    wc.hIcon         = LoadIcon(NULL, IDI_WINLOGO);
+    wc.hIcon         = LoadIcon(NULL, IDI_SHIELD);
     wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszMenuName  = NULL;
     wc.lpszClassName = PROGNAME L"_ClassWindow";
-    wc.hIconSm       = LoadIcon(NULL, IDI_WINLOGO);
+    // wc.hIconSm       = icon.hIcon;
     RegisterClassEx(&wc);
     // Create the window.
     HWND hwnd = CreateWindowEx(

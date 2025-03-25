@@ -1,11 +1,11 @@
 #include "DirEncryptor.hpp"
 
-#define KEYLENGTH          0x01000000 // 256 bits key length
-#define ENCRYPT_BLOCK_SIZE 16         // 32 bit block size
-
-DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
+DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT credit, HWND hwnd)
+    : _hwnd(hwnd), __(__), _credit(credit)
 {
     HCRYPTHASH hHash = NULL;
+    BYTE       rgbHash[HASHLEN];
+    DWORD      cbHash = HASHLEN;
     {
         //---------------------------------------------------------------
         // Get the handle to the default provider.
@@ -17,7 +17,7 @@ DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
         //---------------------------------------------------------------
         // Create the session key.
         // Create a hash object.
-        if (!(CryptCreateHash(_CryptProv, CALG_MD5, 0, 0, &hHash)))
+        if (!(CryptCreateHash(_CryptProv, CALG_SHA_256, 0, 0, &hHash)))
         {
             DisplayErrorBox(hwnd, L"Error during CryptCreateHash!\n", GetLastError());
             return;
@@ -29,6 +29,20 @@ DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
             DisplayErrorBox(hwnd, L"Error during CryptHashData. \n", GetLastError());
             return;
         }
+        if (!CryptGetHashParam(hHash, HP_HASHVAL, rgbHash, &cbHash, 0))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptGetHashParam!\n", GetLastError());
+            return;
+        }
+        {
+            for (DWORD i = 0; i < cbHash; i++)
+            {
+                _KeyHash[i]     = HEXSTR[rgbHash[i] >> 4];
+                _KeyHash[i + 1] = HEXSTR[rgbHash[i] & 0xf];
+            }
+            _KeyHash[cbHash * 2] = 0;
+            MessageBox(hwnd, _KeyHash, PROGNAME L"Key Hash", MB_OK);
+        }
         //-----------------------------------------------------------
         // Derive a session key from the hash object.
         if (!(CryptDeriveKey(_CryptProv, CALG_AES_256, hHash, KEYLENGTH, &_Key)))
@@ -36,11 +50,41 @@ DirEncryptor::DirEncryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
             DisplayErrorBox(hwnd, L"Error during CryptDeriveKey From Password!\n", GetLastError());
             return;
         }
-    }
-    if (hHash && !(CryptDestroyHash(hHash)))
-    {
-        DisplayErrorBox(hwnd, L"Error during CryptDestroyHash.\n", GetLastError());
-        return;
+        cbHash = HASHLEN;
+        if (!(CryptDestroyHash(hHash)))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptDestroyHash.\n", GetLastError());
+            return;
+        }
+        if (!(CryptCreateHash(_CryptProv, CALG_SHA_256, 0, 0, &hHash)))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptCreateHash!\n", GetLastError());
+            return;
+        }
+        if (!(CryptHashData(hHash, (BYTE*)_KeyHash, cbHash * 2, 0)))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptHashData. \n", GetLastError());
+            return;
+        }
+        if (!CryptGetHashParam(hHash, HP_HASHVAL, rgbHash, &cbHash, 0))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptGetHashParam!\n", GetLastError());
+            return;
+        }
+        {
+            for (DWORD i = 0; i < cbHash; i++)
+            {
+                _KeyHash[i]     = HEXSTR[rgbHash[i] >> 4];
+                _KeyHash[i + 1] = HEXSTR[rgbHash[i] & 0xf];
+            }
+            _KeyHash[cbHash * 2] = 0;
+            MessageBox(hwnd, _KeyHash, PROGNAME L"Key Hash Hash", MB_OK);
+        }
+        if (!(CryptDestroyHash(hHash)))
+        {
+            DisplayErrorBox(hwnd, L"Error during CryptDestroyHash.\n", GetLastError());
+            return;
+        }
     }
     //---------------------------------------------------------------
     // Determine the number of bytes to encrypt at a time.
@@ -175,14 +219,33 @@ bool DirEncryptor::RecurseEncryptTree(
 )
 {
     std::wstring file_path;
+    if (dirTreeRoot.directory_path == __)
+    {
+        for (size_t i = 0; i < _credit; i++)
+        {
+            BYTE random[4];
+            if (!CryptGenRandom(_CryptProv, 4, random))
+                return DisplayErrorBox(_hwnd, L"Random sequence not generated", GetLastError());
+            file_path = output_dir + L"\\" + _KeyHash + std::to_wstring(random[1]) +
+                        std::to_wstring(random[2]);
+            HANDLE hFile;
+            if ((hFile = CreateFile(
+                     file_path.c_str(), FILE_WRITE_DATA, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+                     FILE_ATTRIBUTE_NORMAL, NULL
+                 )) == INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(hFile);
+                DisplayErrorBox(_hwnd, L"Error opening destination file!\n", GetLastError());
+                return false;
+            }
+            CloseHandle(hFile);
+        }
+    }
     for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
     {
         file_path = output_dir + L"\\" + dirTreeRoot.directories[i].directory_name;
         if (!CreateDirectory(file_path.c_str(), NULL))
             return DisplayErrorBox(_hwnd, output_dir, GetLastError());
-        if (!dirTreeRoot.directories[i].directories.size() &&
-            !dirTreeRoot.directories[i].files.size())
-            continue;
         if (!RecurseEncryptTree(file_path, dirTreeRoot.directories[i]))
             return false;
     }

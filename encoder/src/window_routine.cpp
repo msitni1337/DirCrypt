@@ -10,6 +10,7 @@ static HWND hButton;
 static HWND hwndEdit;
 static HWND hwndPB;
 
+WCHAR SelectedItemFolder[MAX_PATH];
 TCHAR DraggedFileName[MAX_PATH];
 
 static DirTreeRoot TreeRoot;
@@ -39,7 +40,7 @@ DWORD WINAPI EncryptionThread(LPVOID hwnd)
         return 0;
     WCHAR dest_path[MAX_PATH];
     SHGetPathFromIDList(pidl, dest_path);
-    DirEncryptor dirEncryptor(buff, (HWND)hwnd);
+    DirEncryptor dirEncryptor(buff, SelectedItemFolder, 4, (HWND)hwnd);
     if (dirEncryptor.isReady() && dirEncryptor.encryptTree(dest_path, TreeRoot))
         MessageBox((HWND)hwnd, L"Encryption success.", PROGNAME, MB_OK);
     return 0;
@@ -50,24 +51,30 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
     switch (uMsg)
     {
     case WM_CREATE: {
-        HFONT hfDefault;
+        HINSTANCE g_hInst = (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE);
+        HFONT     hfDefault;
         hfDefault = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         {
             hTreeView = CreateWindowEx(
                 0, WC_TREEVIEW, L"Tree View",
                 WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | WS_CHILD | WS_BORDER | ES_AUTOVSCROLL |
                     ES_AUTOHSCROLL | TVS_HASLINES,
-                0, 0, WNDWIDTH - 16, WNDHEIGHT - 100, hwnd, (HMENU)LIST_VIEW_ID,
-                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+                0, 0, WNDWIDTH - 16, WNDHEIGHT - 100, hwnd, (HMENU)LIST_VIEW_ID, g_hInst, NULL
             );
             if (hTreeView == NULL)
                 MessageBox(hwnd, L"Could not create edit box.", L"Error", MB_OK | MB_ICONERROR);
             SendMessage(hTreeView, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
+            HIMAGELIST himl; // handle to image list
+            if ((himl = ImageList_Create(20, 20, FALSE, 3, 0)) != NULL)
+            {
+                ImageList_AddIcon(himl, LoadIcon(NULL, IDI_SHIELD));
+                TreeView_SetImageList(hTreeView, himl, TVSIL_NORMAL);
+            }
         }
         {
             HWND handle = CreateWindowEx(
                 0, L"Static", L"Password:", WS_CHILD | WS_VISIBLE, 5, WNDHEIGHT - 95, 180, 50, hwnd,
-                0, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+                0, g_hInst, NULL
             );
             SendMessage(handle, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
@@ -79,7 +86,7 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
                 25,       // set size in WM_SIZE message
                 hwnd,     // parent window
                 (HMENU)0, // edit control ID
-                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+                g_hInst, NULL
             );
             SendMessage(hwndEdit, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
@@ -95,15 +102,14 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
                 50,                                                    // Button height.
                 hwnd,                                                  // Parent window.
                 (HMENU)ENCRYPT_BTN_ID,                                 // Button ID.
-                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+                g_hInst, NULL
             );
             SendMessage(hButton, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         }
         {
             hwndPB = CreateWindowEx(
                 0, PROGRESS_CLASS, (LPTSTR)NULL, WS_CHILD | WS_VISIBLE, 310, WNDHEIGHT - 85,
-                WNDWIDTH - 360, 25, hwnd, (HMENU)0,
-                (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL
+                WNDWIDTH - 360, 25, hwnd, (HMENU)0, g_hInst, NULL
             );
             SendMessage(hwndPB, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
             SendMessage(hwndPB, PBM_SETSTEP, 1, 0);
@@ -114,11 +120,13 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         HDROP hDrop = (HDROP)wParam;
         int   count = DragQueryFile(hDrop, 0xFFFFFFFF, DraggedFileName, MAX_PATH);
         for (int i = 0; i < count; i++)
-        {
             DragQueryFile(hDrop, i, DraggedFileName, MAX_PATH);
-            // MessageBox(GetForegroundWindow(), DraggedFileName, L"Current file received", MB_OK);
-        }
         DragFinish(hDrop);
+        if (!IsPathOutsideAnother(hwnd, DraggedFileName, L"."))
+        {
+            MessageBox((HWND)hwnd, PROGNAME L" MUST NOT be in the directory", PROGNAME, MB_OK);
+            break;
+        }
         DirTree dirTree(DraggedFileName, hTreeView);
         TreeRoot = dirTree.getTreeRoot();
         SendMessage(hwndPB, PBM_SETRANGE32, 0, TreeRoot.files_count);
@@ -132,6 +140,28 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         switch (LOWORD(wParam))
         {
         case ENCRYPT_BTN_ID: {
+            HTREEITEM selection = TreeView_GetSelection(hTreeView);
+            if (selection == NULL)
+            {
+                MessageBox((HWND)hwnd, L"Select License output folder", PROGNAME, MB_OK);
+                break;
+            }
+            TVITEM item;
+            item.hItem      = selection;
+            item.mask       = TVIF_TEXT;
+            item.pszText    = SelectedItemFolder;
+            item.cchTextMax = MAX_PATH;
+            if (!TreeView_GetItem(hTreeView, &item))
+            {
+                MessageBox((HWND)hwnd, L"Select License output folder", PROGNAME, MB_OK);
+                break;
+            }
+            DWORD dwAttrib = GetFileAttributes(SelectedItemFolder);
+            if (dwAttrib == INVALID_FILE_ATTRIBUTES || !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
+            {
+                MessageBox((HWND)hwnd, L"Select License output folder", PROGNAME, MB_OK);
+                break;
+            }
             DWORD  ThreadId;
             HANDLE Thread = CreateThread(
                 NULL,             // default security attributes

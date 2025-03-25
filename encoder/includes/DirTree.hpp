@@ -31,5 +31,5 @@ private:
     DirTree&  operator=(const DirTree& _);
     bool      RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoot);
     void      PopulateTreeView(const DirTreeRoot& dirTreeRoot, HTREEITEM parent);
-    HTREEITEM InsertToTreeView(const std::wstring& text, HTREEITEM parent, HTREEITEM prev);
+    HTREEITEM InsertToTreeView(const std::wstring& text, HTREEITEM parent, HTREEITEM prev, int img);
 };
