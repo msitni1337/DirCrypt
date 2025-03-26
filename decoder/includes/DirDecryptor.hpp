@@ -19,9 +19,10 @@ private:
     DWORD        _BufferLen;
     HWND         _hwnd;
     std::wstring _r;
+    wchar_t      __[MAX_PATH];
 
 public:
-    DirDecryptor(const std::wstring _, const std::wstring r, HWND hwnd);
+    DirDecryptor(const std::wstring _, HWND hwnd);
     ~DirDecryptor();
 
 public:

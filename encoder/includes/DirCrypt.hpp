@@ -14,6 +14,7 @@
 #include <tchar.h>
 #include <wincrypt.h>
 #include <windowsx.h>
+#include <resource.h>
 
 #pragma comment(lib, "pathcch")
 #pragma comment(lib, "shlwapi")
@@ -23,7 +24,7 @@
 #pragma comment(lib, "shell32")
 #pragma comment(lib, "advapi32")
 
-#define PROGNAME   L"DirCrypt - Encoder"
+#define PROGNAME   L"DirCrypt encoder"
 #define PROGCREDIT L"coded by @msitni"
 #define WNDWIDTH   1000
 #define WNDHEIGHT  600

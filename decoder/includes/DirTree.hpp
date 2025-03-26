@@ -15,12 +15,11 @@ struct DirTreeRoot
 class DirTree
 {
 private:
-    HWND        _TreeViewUIHandler;
+    HWND        _hwnd;
     DirTreeRoot _DirTreeRoot;
 
 public:
-    DirTree(const std::wstring root, HWND TreeViewUIHandler);
-    DirTree(DirTreeRoot _DirTreeRoot, HWND TreeViewUIHandler);
+    DirTree(const std::wstring root, HWND _hwnd);
     ~DirTree();
 
 public:
@@ -30,6 +29,4 @@ private:
     DirTree(const DirTree& _);
     DirTree&  operator=(const DirTree& _);
     bool      RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoot);
-    void      PopulateTreeView(const DirTreeRoot& dirTreeRoot, HTREEITEM parent);
-    HTREEITEM InsertToTreeView(const std::wstring& text, HTREEITEM parent, HTREEITEM prev, int img);
 };

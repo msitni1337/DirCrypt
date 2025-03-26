@@ -1,18 +1,13 @@
 #include "DirTree.hpp"
 
-DirTree::DirTree(const std::wstring root, HWND TreeViewUIHandler)
-    : _TreeViewUIHandler(TreeViewUIHandler)
+DirTree::DirTree(const std::wstring root, HWND hwnd) : _hwnd(hwnd)
 {
-    TreeView_DeleteAllItems(TreeViewUIHandler);
     _DirTreeRoot.directory_path = root;
     _DirTreeRoot.files_count    = 0;
     if (RecurseDirSearch(root, _DirTreeRoot) == false)
-        InsertToTreeView(L"Analyzing path: [" + root + L"] failed.", TVI_ROOT, TVI_FIRST, -1);
+        DisplayErrorBox(_hwnd, L"Failed to read directory.", GetLastError());
     else
-    {
-        PopulateTreeView(_DirTreeRoot, TVI_ROOT);
         _DirTreeRoot.directory_path = root;
-    }
 }
 
 DirTree::~DirTree() {}
@@ -32,8 +27,7 @@ bool DirTree::RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoo
         if (hFind == INVALID_HANDLE_VALUE)
         {
             DisplayErrorBox(
-                _TreeViewUIHandler, L"FindFirstFile() failed, please provide valid directory.",
-                GetLastError()
+                _hwnd, L"FindFirstFile() failed, please provide valid directory.", GetLastError()
             );
             return false;
         }
@@ -71,48 +65,8 @@ bool DirTree::RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoo
     }
     if (dwError != ERROR_NO_MORE_FILES)
     {
-        DisplayErrorBox(_TreeViewUIHandler, L"FindFirstFile() failed", dwError);
+        DisplayErrorBox(_hwnd, L"FindFirstFile() failed", dwError);
         return false;
     }
     return true;
-}
-
-void DirTree::PopulateTreeView(const DirTreeRoot& dirTreeRoot, HTREEITEM parent)
-{
-    HTREEITEM prev = TVI_FIRST;
-    for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
-    {
-        if (dirTreeRoot.directories[i].directories.size() ||
-            dirTreeRoot.directories[i].files.size())
-            prev = InsertToTreeView(dirTreeRoot.directories[i].directory_path, parent, prev, -1);
-        else
-            prev = InsertToTreeView(dirTreeRoot.directories[i].directory_path, parent, prev, -1);
-        PopulateTreeView(dirTreeRoot.directories[i], prev);
-    }
-    for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
-        prev = InsertToTreeView(dirTreeRoot.files[i].first, parent, prev, 0);
-}
-
-HTREEITEM DirTree::InsertToTreeView(
-    const std::wstring& text, HTREEITEM parent, HTREEITEM prev, int img
-)
-{
-    TVITEM         tvi;
-    TVINSERTSTRUCT tvins;
-    tvi.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
-    // Set the text of the item.
-    tvi.pszText        = (LPWSTR)text.c_str();
-    tvi.cchTextMax     = sizeof(tvi.pszText) / sizeof(tvi.pszText[0]);
-    tvi.iImage         = img;
-    tvi.iSelectedImage = -1;
-    // Save the heading level in the item's application-defined
-    // data area.
-    // tvi.lParam         = (LPARAM)1;
-    tvins.item         = tvi;
-    tvins.hInsertAfter = prev;
-    tvins.hParent      = parent;
-    // Set the parent item based on the specified level.
-    // tvins.hParent = TVI_ROOT;
-    return (HTREEITEM
-    )SendMessage(_TreeViewUIHandler, TVM_INSERTITEM, 0, (LPARAM)(LPTVINSERTSTRUCT)&tvins);
 }

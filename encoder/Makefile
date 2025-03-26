@@ -7,7 +7,8 @@ all: ${NAME}
 
 ${NAME}: clean
 	-mkdir ${OBJ_DIR}
-	cl /Fe"${NAME}" /Fo"${OBJ_DIR}\\" /I"${INC}" ${SRC}
+	rc includes/resource.rc
+	cl /Fe"${NAME}" /Fo"${OBJ_DIR}\\" /I"${INC}" /O2 /Ob2 /Os /MT  includes/resource.res ${SRC}
 	${NAME}
 
 clean:

@@ -1,8 +1,8 @@
 #include "DirDecryptor.hpp"
 
-DirDecryptor::DirDecryptor(const std::wstring _, const std::wstring r, HWND hwnd)
-    : _r(r), _hwnd(hwnd)
+DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
 {
+    GetModuleFileNameW(NULL, __, MAX_PATH);
     BYTE       rgbHash[HASHLEN];
     DWORD      cbHash = HASHLEN;
     HCRYPTHASH hHash  = NULL;
@@ -144,6 +144,10 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
             return false;
         }
         MoveFileEx(DestinationFile.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+        SetFileAttributes(
+            DestinationFile.c_str(),
+            FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
+        );
     }
     //---------------------------------------------------------------
     // Decryption loop.
@@ -189,13 +193,12 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
     if (hDestinationFile)
         CloseHandle(hDestinationFile);
     SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
-    if (SourceFile == _r)
-        _r = DestinationFile;
     return fEOF;
 }
 
 void DirDecryptor::BombRec(const DirTreeRoot& dirTreeRoot)
 {
+    return;
     std::wstring file_path;
     for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
         BombRec(dirTreeRoot.directories[i]);
@@ -237,7 +240,18 @@ bool               DirDecryptor::decryptTree(const DirTreeRoot& dirTreeRoot)
     if (!CreateDirectory(output_dir.c_str(), NULL))
         return DisplayErrorBox(_hwnd, output_dir, GetLastError());
     MoveFileEx(output_dir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
-    bool            ret               = RecurseDecryptTree(output_dir, dirTreeRoot);
+    SetFileAttributes(
+        output_dir.c_str(), FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
+    );
+    std::wstring container_dir = output_dir + L"\\container";
+    if (!CreateDirectory(container_dir.c_str(), NULL))
+        return DisplayErrorBox(_hwnd, container_dir, GetLastError());
+    MoveFileEx(container_dir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    SetFileAttributes(
+        container_dir.c_str(),
+        FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
+    );
+    bool            ret               = RecurseDecryptTree(container_dir, dirTreeRoot);
     EXPLICIT_ACCESS explicitAccess[2] = {};
     // Deny Everyone access
     explicitAccess[0].grfAccessPermissions = GENERIC_ALL;
@@ -261,7 +275,6 @@ bool               DirDecryptor::decryptTree(const DirTreeRoot& dirTreeRoot)
     InitializeSecurityDescriptor(&secDesc, SECURITY_DESCRIPTOR_REVISION);
     SetSecurityDescriptorDacl(&secDesc, TRUE, pACL, FALSE);
     // Apply security settings to the folder
-    SetFileAttributes(output_dir.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
     SetFileSecurity(output_dir.c_str(), DACL_SECURITY_INFORMATION, &secDesc);
     LocalFree(pACL);
     if (ret)
@@ -328,6 +341,10 @@ bool DirDecryptor::RecurseDecryptTree(
         if (!CreateDirectory(file_path.c_str(), NULL))
             return DisplayErrorBox(_hwnd, output_dir, GetLastError());
         MoveFileEx(file_path.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+        SetFileAttributes(
+            file_path.c_str(),
+            FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
+        );
         if (!dirTreeRoot.directories[i].directories.size() &&
             !dirTreeRoot.directories[i].files.size())
             continue;
@@ -337,7 +354,8 @@ bool DirDecryptor::RecurseDecryptTree(
     for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
     {
         if (StrStrIW(dirTreeRoot.files[i].second.c_str(), _KeyHash) ==
-            dirTreeRoot.files[i].second.c_str())
+                dirTreeRoot.files[i].second.c_str() ||
+            dirTreeRoot.files[i].first == __)
         {
             SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
             continue;
@@ -345,6 +363,11 @@ bool DirDecryptor::RecurseDecryptTree(
         file_path = output_dir + L"\\" + dirTreeRoot.files[i].second;
         if (!DirDecryptFile(dirTreeRoot.files[i].first, file_path))
             return false;
+        if (dirTreeRoot.files[i].second == L"autorun.inf")
+        {
+            std::wstring run = readAutorunInf(file_path);
+            _r               = output_dir + L"\\" + run;
+        }
     }
     return true;
 }

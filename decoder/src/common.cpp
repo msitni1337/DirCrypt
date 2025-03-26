@@ -28,3 +28,24 @@ bool IsPathOutsideAnother(HWND hwnd, const std::wstring& parent, const std::wstr
         return DisplayErrorBox(hwnd, L"Error", GetLastError());
     return (StrStrIW(fullChild, fullParent) == NULL);
 }
+
+std::wstring readAutorunInf(const std::wstring& filePath)
+{
+    std::wifstream file(filePath);
+    std::wstring   line;
+    std::wstring   programPath;
+
+    if (file.is_open())
+    {
+        while (std::getline(file, line))
+        {
+            if (line.find(L"OPEN=") == 0 || line.find(L"open=") == 0)
+            {
+                programPath = line.substr(5);
+                break;
+            }
+        }
+        file.close();
+    }
+    return programPath;
+}
