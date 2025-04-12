@@ -15,18 +15,20 @@ struct DirTreeRoot
 class DirTree
 {
 private:
-    HWND        _hwnd;
-    DirTreeRoot _DirTreeRoot;
+    HWND         _hwnd;
+    DirTreeRoot  _DirTreeRoot;
+    std::wstring _L;
 
 public:
     DirTree(const std::wstring root, HWND _hwnd);
     ~DirTree();
 
 public:
-    const DirTreeRoot& getTreeRoot() const;
+    const DirTreeRoot&  getTreeRoot() const;
+    const std::wstring& getLPath() const;
 
 private:
     DirTree(const DirTree& _);
-    DirTree&  operator=(const DirTree& _);
-    bool      RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoot);
+    DirTree& operator=(const DirTree& _);
+    bool     RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoot);
 };

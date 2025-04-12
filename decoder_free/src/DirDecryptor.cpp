@@ -1,6 +1,6 @@
 #include "DirDecryptor.hpp"
 
-DirDecryptor::DirDecryptor(const std::wstring _, HWND hwnd) : _hwnd(hwnd)
+DirDecryptor::DirDecryptor(const std::wstring _, BYTE* IV, HWND hwnd) : _IV(IV), _hwnd(hwnd)
 {
     GetModuleFileNameW(NULL, __, MAX_PATH);
     BYTE       rgbHash[HASHLEN];
@@ -144,10 +144,14 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
             return false;
         }
         MoveFileEx(DestinationFile.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
-        SetFileAttributes(
-            DestinationFile.c_str(),
-            FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
-        );
+        SetFileAttributes(DestinationFile.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
+    }
+    if (!CryptSetKeyParam(_Key, KP_IV, _IV, 0))
+    {
+        DisplayErrorBox(_hwnd, L"Error setting IV.\n", GetLastError());
+        CloseHandle(hSourceFile);
+        CloseHandle(hDestinationFile);
+        return false;
     }
     //---------------------------------------------------------------
     // Decryption loop.
@@ -172,6 +176,7 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
             DWORD dwCount = Count;
             if (!CryptDecrypt(_Key, NULL, fEOF, 0, _Buffer, &dwCount))
             {
+                DisplayErrorBox(_hwnd, SourceFile, GetLastError());
                 DisplayErrorBox(_hwnd, L"Error during CryptDecrypt. \n", GetLastError());
                 fEOF = false;
                 break;
@@ -196,62 +201,26 @@ bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstr
     return fEOF;
 }
 
-void DirDecryptor::BombRec(const DirTreeRoot& dirTreeRoot)
-{
-    return;
-    std::wstring file_path;
-    for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
-        BombRec(dirTreeRoot.directories[i]);
-    for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
-        DeleteFile(dirTreeRoot.files[i].first.c_str());
-    RemoveDirectory(dirTreeRoot.directory_path.c_str());
-}
-
 bool DirDecryptor::isReady() const
 {
     return _ready;
 }
+
 const DirTreeRoot* _DirTreeRoot = NULL;
 bool               DirDecryptor::decryptTree(const DirTreeRoot& dirTreeRoot)
 {
-    if (!_ready)
+    if (!_ready || _outdir == L"")
         return DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
     _DirTreeRoot = &dirTreeRoot;
-    if (!RecurseSetIV(dirTreeRoot))
-    {
-        BombRec(*_DirTreeRoot);
-        MessageBox(_hwnd, L"LICENSE EXPIRED", PROGNAME, MB_OK);
-        return false;
-    }
-    // DWORD dwAttrib = GetFileAttributes(output_dir.c_str());
-    // if (dwAttrib == INVALID_FILE_ATTRIBUTES || !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
-    // return DisplayErrorBox(_hwnd, L"Invalid Directory Path", GetLastError());
-    // if (!PathIsDirectoryEmpty(output_dir.c_str()))
-    // return DisplayErrorBox(_hwnd, L"Directory Not Empty", GetLastError());
-    WCHAR spath[MAX_PATH];
-    if (!GetTempPath(MAX_PATH, spath))
-        return DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
-    BYTE random[4];
-    if (!CryptGenRandom(_CryptProv, 4, random))
-        return DisplayErrorBox(_hwnd, L"Random sequence not generated", GetLastError());
-    std::wstring output_dir = spath;
-    output_dir += L"Temp" + std::to_wstring(random[0]) + std::to_wstring(random[1]) +
-                  std::to_wstring(random[3]);
-    if (!CreateDirectory(output_dir.c_str(), NULL))
-        return DisplayErrorBox(_hwnd, output_dir, GetLastError());
-    MoveFileEx(output_dir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
-    SetFileAttributes(
-        output_dir.c_str(), FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
-    );
-    std::wstring container_dir = output_dir + L"\\container";
+    if (!CreateDirectory(_outdir.c_str(), NULL))
+        return DisplayErrorBox(_hwnd, L"", GetLastError());
+    MoveFileEx(_outdir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    SetFileAttributes(_outdir.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
+    std::wstring container_dir = _outdir + L"\\container";
     if (!CreateDirectory(container_dir.c_str(), NULL))
         return DisplayErrorBox(_hwnd, container_dir, GetLastError());
     MoveFileEx(container_dir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
-    SetFileAttributes(
-        container_dir.c_str(),
-        FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
-    );
-    bool            ret               = RecurseDecryptTree(container_dir, dirTreeRoot);
+    SetFileAttributes(container_dir.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
     EXPLICIT_ACCESS explicitAccess[2] = {};
     // Deny Everyone access
     explicitAccess[0].grfAccessPermissions = GENERIC_ALL;
@@ -275,59 +244,36 @@ bool               DirDecryptor::decryptTree(const DirTreeRoot& dirTreeRoot)
     InitializeSecurityDescriptor(&secDesc, SECURITY_DESCRIPTOR_REVISION);
     SetSecurityDescriptorDacl(&secDesc, TRUE, pACL, FALSE);
     // Apply security settings to the folder
-    SetFileSecurity(output_dir.c_str(), DACL_SECURITY_INFORMATION, &secDesc);
+    SetFileSecurity(_outdir.c_str(), DACL_SECURITY_INFORMATION, &secDesc);
     LocalFree(pACL);
-    if (ret)
-    {
-        STARTUPINFO stinfo        = {};
-        stinfo.cb                 = sizeof(stinfo);
-        PROCESS_INFORMATION pinfo = {};
-        CreateProcess(_r.c_str(), NULL, NULL, NULL, false, 0, NULL, NULL, &stinfo, &pinfo);
-    }
-    return false;
+    return RecurseDecryptTree(container_dir, dirTreeRoot);
 }
 
-bool DirDecryptor::RecurseSetIV(const DirTreeRoot& dirTreeRoot)
+const std::wstring& DirDecryptor::Get_r()
 {
-    std::wstring file_path;
-    for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
+    return _r;
+}
+
+const std::wstring& DirDecryptor::GetOutDir()
+{
+    if (!_ready || _outdir != L"")
+        return _outdir;
+    WCHAR spath[MAX_PATH];
+    if (!GetTempPath(MAX_PATH, spath))
     {
-        if (StrStrIW(dirTreeRoot.files[i].second.c_str(), _KeyHash) ==
-            dirTreeRoot.files[i].second.c_str())
-        {
-            HANDLE hSourceFile;
-            if ((hSourceFile = CreateFile(
-                     dirTreeRoot.files[i].first.c_str(), FILE_READ_DATA, FILE_SHARE_READ, NULL,
-                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
-                 )) == INVALID_HANDLE_VALUE)
-            {
-                DisplayErrorBox(_hwnd, L"Error opening source plaintext file!\n", GetLastError());
-                return false;
-            }
-            DWORD Count;
-            if (!ReadFile(hSourceFile, _IV, DECRYPT_BLOCK_SIZE, &Count, NULL))
-            {
-                CloseHandle(hSourceFile);
-                DisplayErrorBox(_hwnd, L"Error reading plaintext!\n", GetLastError());
-                return false;
-            }
-            CloseHandle(hSourceFile);
-            if (!CryptSetKeyParam(_Key, KP_IV, _IV, 0))
-            {
-                DisplayErrorBox(_hwnd, L"Error resetting IV.\n", GetLastError());
-                return false;
-            }
-            if (!DeleteFile(dirTreeRoot.files[i].first.c_str()))
-                return false;
-            return true;
-        }
+        DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
+        return _outdir;
     }
-    for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
+    BYTE random[4];
+    if (!CryptGenRandom(_CryptProv, 4, random))
     {
-        if (RecurseSetIV(dirTreeRoot.directories[i]))
-            return true;
+        DisplayErrorBox(_hwnd, L"Random sequence not generated", GetLastError());
+        return _outdir;
     }
-    return false;
+    _outdir = spath;
+    _outdir += L"Temp" + std::to_wstring(random[0]) + std::to_wstring(random[1]) +
+               std::to_wstring(random[3]);
+    return _outdir;
 }
 
 bool DirDecryptor::RecurseDecryptTree(
@@ -341,10 +287,7 @@ bool DirDecryptor::RecurseDecryptTree(
         if (!CreateDirectory(file_path.c_str(), NULL))
             return DisplayErrorBox(_hwnd, output_dir, GetLastError());
         MoveFileEx(file_path.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
-        SetFileAttributes(
-            file_path.c_str(),
-            FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN
-        );
+        SetFileAttributes(file_path.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
         if (!dirTreeRoot.directories[i].directories.size() &&
             !dirTreeRoot.directories[i].files.size())
             continue;
@@ -355,7 +298,7 @@ bool DirDecryptor::RecurseDecryptTree(
     {
         if (StrStrIW(dirTreeRoot.files[i].second.c_str(), _KeyHash) ==
                 dirTreeRoot.files[i].second.c_str() ||
-            dirTreeRoot.files[i].first == __)
+            dirTreeRoot.files[i].first == __ || dirTreeRoot.files[i].second == L"low_stat.dat")
         {
             SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
             continue;
@@ -365,8 +308,8 @@ bool DirDecryptor::RecurseDecryptTree(
             return false;
         if (dirTreeRoot.files[i].second == L"autorun.inf")
         {
-            std::wstring run = readAutorunInf(file_path);
-            _r               = output_dir + L"\\" + run;
+            std::wstring autorun = readAutorunInf(file_path);
+            _r                   = output_dir + L"\\" + autorun;
         }
     }
     return true;

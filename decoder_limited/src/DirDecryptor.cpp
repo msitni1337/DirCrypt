@@ -1,11 +1,11 @@
-#include "DirEncryptor.hpp"
+#include "DirDecryptor.hpp"
 
-DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT credit, HWND hwnd)
-    : _hwnd(hwnd), __(__), _credit(credit)
+DirDecryptor::DirDecryptor(const std::wstring _, BYTE* IV, HWND hwnd) : _IV(IV), _hwnd(hwnd)
 {
-    HCRYPTHASH hHash = NULL;
+    GetModuleFileNameW(NULL, __, MAX_PATH);
     BYTE       rgbHash[HASHLEN];
     DWORD      cbHash = HASHLEN;
+    HCRYPTHASH hHash  = NULL;
     {
         //---------------------------------------------------------------
         // Get the handle to the default provider.
@@ -42,23 +42,13 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
                 _KeyHash[i * 2]     = HEXSTR[rgbHash[i] >> 4];
                 _KeyHash[i * 2 + 1] = HEXSTR[rgbHash[i] & 0xf];
             }
-            _KeyHash[cbHash * 2] = 0;
+            _KeyHash[cbHash * 2] = L'\0';
         }
         //-----------------------------------------------------------
         // Derive a session key from the hash object.
         if (!(CryptDeriveKey(_CryptProv, CALG_AES_256, hHash, KEYLENGTH, &_Key)))
         {
             DisplayErrorBox(hwnd, L"Error during CryptDeriveKey From Password!\n", GetLastError());
-            return;
-        }
-        if (!CryptGenRandom(_CryptProv, ENCRYPT_BLOCK_SIZE, _IV))
-        {
-            DisplayErrorBox(hwnd, L"Error during CryptGenRandom\n", GetLastError());
-            return;
-        }
-        if (!CryptSetKeyParam(_Key, KP_IV, _IV, 0))
-        {
-            DisplayErrorBox(_hwnd, L"Error resetting IV.\n", GetLastError());
             return;
         }
         if (!(CryptDestroyHash(hHash)))
@@ -89,7 +79,7 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
                 _KeyHash[i * 2]     = HEXSTR[rgbHash[i] >> 4];
                 _KeyHash[i * 2 + 1] = HEXSTR[rgbHash[i] & 0xf];
             }
-            _KeyHash[cbHash * 2] = 0;
+            _KeyHash[cbHash * 2] = L'\0';
         }
         if (!(CryptDestroyHash(hHash)))
         {
@@ -97,8 +87,8 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
             return;
         }
     }
-    _BlockLen  = 1000 - 1000 % ENCRYPT_BLOCK_SIZE;
-    _BufferLen = _BlockLen + ENCRYPT_BLOCK_SIZE;
+    _BlockLen  = 1000 - 1000 % DECRYPT_BLOCK_SIZE;
+    _BufferLen = _BlockLen + DECRYPT_BLOCK_SIZE;
     //---------------------------------------------------------------
     // Allocate memory for reading file content.
     if (!(_Buffer = (BYTE*)malloc(_BufferLen)))
@@ -109,7 +99,7 @@ DirEncryptor::DirEncryptor(const std::wstring _, const std::wstring __, UINT cre
     _ready = true;
 }
 
-DirEncryptor::~DirEncryptor()
+DirDecryptor::~DirDecryptor()
 {
     //---------------------------------------------------------------
     // Release the session key.
@@ -125,7 +115,7 @@ DirEncryptor::~DirEncryptor()
         free(_Buffer);
 }
 
-bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstring DestinationFile)
+bool DirDecryptor::DirDecryptFile(const std::wstring SourceFile, const std::wstring DestinationFile)
 {
     //---------------------------------------------------------------
     // Declare and initialize local variables.
@@ -153,6 +143,8 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
             DisplayErrorBox(_hwnd, L"Error opening destination file!\n", GetLastError());
             return false;
         }
+        MoveFileEx(DestinationFile.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+        SetFileAttributes(DestinationFile.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
     }
     if (!CryptSetKeyParam(_Key, KP_IV, _IV, 0))
     {
@@ -162,7 +154,7 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
         return false;
     }
     //---------------------------------------------------------------
-    // Encryption loop.
+    // Decryption loop.
     bool fEOF = false;
     {
         DWORD Count;
@@ -180,16 +172,17 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
             if (Count == 0)
                 break;
             //-----------------------------------------------------------
-            // Encrypt data.
+            // Decrypt data.
             DWORD dwCount = Count;
-            if (!CryptEncrypt(_Key, NULL, fEOF, 0, _Buffer, &dwCount, _BufferLen))
+            if (!CryptDecrypt(_Key, NULL, fEOF, 0, _Buffer, &dwCount))
             {
-                DisplayErrorBox(_hwnd, L"Error during CryptEncrypt. \n", GetLastError());
+                DisplayErrorBox(_hwnd, SourceFile, GetLastError());
+                DisplayErrorBox(_hwnd, L"Error during CryptDecrypt. \n", GetLastError());
                 fEOF = false;
                 break;
             }
             //-----------------------------------------------------------
-            // Write the encrypted data to the destination file.
+            // Write the decrypted data to the destination file.
             if (!WriteFile(hDestinationFile, _Buffer, dwCount, &Count, NULL))
             {
                 DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
@@ -204,76 +197,120 @@ bool DirEncryptor::DirEncryptFile(const std::wstring SourceFile, const std::wstr
         CloseHandle(hSourceFile);
     if (hDestinationFile)
         CloseHandle(hDestinationFile);
-    SendMessage((HWND)_hwnd, WM_COMMAND, ENCRYPT_NOTIF_ID, 0);
+    SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
     return fEOF;
 }
 
-bool DirEncryptor::isReady() const
+bool DirDecryptor::isReady() const
 {
     return _ready;
 }
 
-bool DirEncryptor::encryptTree(const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot)
+const DirTreeRoot* _DirTreeRoot = NULL;
+bool               DirDecryptor::decryptTree(const DirTreeRoot& dirTreeRoot)
 {
-    if (!_ready)
-        return DisplayErrorBox(_hwnd, L"Encryptor not ready", ERROR_NOT_READY);
-    DWORD dwAttrib = GetFileAttributes(output_dir.c_str());
-    if (dwAttrib == INVALID_FILE_ATTRIBUTES || !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
-        return DisplayErrorBox(_hwnd, L"Invalid Directory Path", GetLastError());
-    if (!PathIsDirectoryEmpty(output_dir.c_str()))
-        return DisplayErrorBox(_hwnd, L"Directory Not Empty", GetLastError());
-    return RecurseEncryptTree(output_dir, dirTreeRoot);
+    if (!_ready || _outdir == L"")
+        return DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
+    _DirTreeRoot = &dirTreeRoot;
+    if (!CreateDirectory(_outdir.c_str(), NULL))
+        return DisplayErrorBox(_hwnd, L"", GetLastError());
+    MoveFileEx(_outdir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    SetFileAttributes(_outdir.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
+    std::wstring container_dir = _outdir + L"\\container";
+    if (!CreateDirectory(container_dir.c_str(), NULL))
+        return DisplayErrorBox(_hwnd, container_dir, GetLastError());
+    MoveFileEx(container_dir.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    SetFileAttributes(container_dir.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
+    EXPLICIT_ACCESS explicitAccess[2] = {};
+    // Deny Everyone access
+    explicitAccess[0].grfAccessPermissions = GENERIC_ALL;
+    explicitAccess[0].grfAccessMode        = DENY_ACCESS;
+    explicitAccess[0].grfInheritance       = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    explicitAccess[0].Trustee.TrusteeForm  = TRUSTEE_IS_NAME;
+    explicitAccess[0].Trustee.TrusteeType  = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    explicitAccess[0].Trustee.ptstrName    = (LPWSTR)L"Everyone";
+    // Grant Full Control to SYSTEM
+    explicitAccess[1].grfAccessPermissions = GENERIC_ALL;
+    explicitAccess[1].grfAccessMode        = GRANT_ACCESS;
+    explicitAccess[1].grfInheritance       = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    explicitAccess[1].Trustee.TrusteeForm  = TRUSTEE_IS_NAME;
+    explicitAccess[1].Trustee.TrusteeType  = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    explicitAccess[1].Trustee.ptstrName    = (LPWSTR)L"SYSTEM";
+    // Create a new ACL that denies access
+    PACL pACL = nullptr;
+    SetEntriesInAcl(2, explicitAccess, NULL, &pACL);
+    // Apply the security descriptor
+    SECURITY_DESCRIPTOR secDesc;
+    InitializeSecurityDescriptor(&secDesc, SECURITY_DESCRIPTOR_REVISION);
+    SetSecurityDescriptorDacl(&secDesc, TRUE, pACL, FALSE);
+    // Apply security settings to the folder
+    SetFileSecurity(_outdir.c_str(), DACL_SECURITY_INFORMATION, &secDesc);
+    LocalFree(pACL);
+    return RecurseDecryptTree(container_dir, dirTreeRoot);
 }
 
-bool DirEncryptor::RecurseEncryptTree(
+const std::wstring& DirDecryptor::Get_r()
+{
+    return _r;
+}
+
+const std::wstring& DirDecryptor::GetOutDir()
+{
+    if (!_ready || _outdir != L"")
+        return _outdir;
+    WCHAR spath[MAX_PATH];
+    if (!GetTempPath(MAX_PATH, spath))
+    {
+        DisplayErrorBox(_hwnd, L"Decryptor not ready", ERROR_NOT_READY);
+        return _outdir;
+    }
+    BYTE random[4];
+    if (!CryptGenRandom(_CryptProv, 4, random))
+    {
+        DisplayErrorBox(_hwnd, L"Random sequence not generated", GetLastError());
+        return _outdir;
+    }
+    _outdir = spath;
+    _outdir += L"Temp" + std::to_wstring(random[0]) + std::to_wstring(random[1]) +
+               std::to_wstring(random[3]);
+    return _outdir;
+}
+
+bool DirDecryptor::RecurseDecryptTree(
     const std::wstring& output_dir, const DirTreeRoot& dirTreeRoot
 )
 {
     std::wstring file_path;
-    if (dirTreeRoot.directory_path == __)
-    {
-        for (size_t i = 0; i < _credit; i++)
-        {
-            file_path = output_dir + L"\\" + L"low_stat.dat";
-            HANDLE hFile;
-            if ((hFile = CreateFile(
-                     file_path.c_str(), FILE_WRITE_DATA, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
-                     FILE_ATTRIBUTE_NORMAL, NULL
-                 )) == INVALID_HANDLE_VALUE)
-            {
-                CloseHandle(hFile);
-                DisplayErrorBox(_hwnd, L"Error opening destination file!\n", GetLastError());
-                return false;
-            }
-            DWORD Count;
-            if (!WriteFile(hFile, _IV, ENCRYPT_BLOCK_SIZE, &Count, NULL))
-            {
-                DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
-                CloseHandle(hFile);
-                return false;
-            }
-            if (!WriteFile(hFile, &_credit, sizeof(_credit), &Count, NULL))
-            {
-                DisplayErrorBox(_hwnd, L"Error writing ciphertext.\n", GetLastError());
-                CloseHandle(hFile);
-                return false;
-            }
-            CloseHandle(hFile);
-        }
-    }
     for (size_t i = 0; i < dirTreeRoot.directories.size(); i++)
     {
         file_path = output_dir + L"\\" + dirTreeRoot.directories[i].directory_name;
         if (!CreateDirectory(file_path.c_str(), NULL))
             return DisplayErrorBox(_hwnd, output_dir, GetLastError());
-        if (!RecurseEncryptTree(file_path, dirTreeRoot.directories[i]))
+        MoveFileEx(file_path.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+        SetFileAttributes(file_path.c_str(), FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
+        if (!dirTreeRoot.directories[i].directories.size() &&
+            !dirTreeRoot.directories[i].files.size())
+            continue;
+        if (!RecurseDecryptTree(file_path, dirTreeRoot.directories[i]))
             return false;
     }
     for (size_t i = 0; i < dirTreeRoot.files.size(); i++)
     {
-        file_path = dirTreeRoot.directory_path + L"\\" + dirTreeRoot.files[i];
-        if (!DirEncryptFile(file_path, output_dir + L"\\" + dirTreeRoot.files[i]))
+        if (StrStrIW(dirTreeRoot.files[i].second.c_str(), _KeyHash) ==
+                dirTreeRoot.files[i].second.c_str() ||
+            dirTreeRoot.files[i].first == __ || dirTreeRoot.files[i].second == L"low_stat.dat")
+        {
+            SendMessage((HWND)_hwnd, WM_COMMAND, DECRYPT_NOTIF_ID, 0);
+            continue;
+        }
+        file_path = output_dir + L"\\" + dirTreeRoot.files[i].second;
+        if (!DirDecryptFile(dirTreeRoot.files[i].first, file_path))
             return false;
+        if (dirTreeRoot.files[i].second == L"autorun.inf")
+        {
+            std::wstring autorun = readAutorunInf(file_path);
+            _r                   = output_dir + L"\\" + autorun;
+        }
     }
     return true;
 }

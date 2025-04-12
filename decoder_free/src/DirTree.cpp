@@ -55,6 +55,8 @@ bool DirTree::RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoo
                 }
                 else
                 {
+                    if (ffd.cFileName == std::wstring(L"low_stat.dat"))
+                        _L = root + L"\\" + ffd.cFileName;
                     dirTreeRoot.files.push_back({root + L"\\" + ffd.cFileName, ffd.cFileName});
                     _DirTreeRoot.files_count++;
                 }
@@ -69,4 +71,9 @@ bool DirTree::RecurseDirSearch(const std::wstring& root, DirTreeRoot& dirTreeRoo
         return false;
     }
     return true;
+}
+
+const std::wstring& DirTree::getLPath() const
+{
+    return _L;
 }

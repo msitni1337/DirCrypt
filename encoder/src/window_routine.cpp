@@ -230,13 +230,6 @@ LRESULT CALLBACK WindowProcRoutine(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
         PAINTSTRUCT ps;
         HDC         hdc = BeginPaint(hwnd, &ps);
 
-        // FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 2));
-        // ps.rcPaint.top    = 0;
-        // ps.rcPaint.bottom = 100;
-        // ps.rcPaint.left   = 0;
-        // ps.rcPaint.right  = 100;
-        // FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_HIGHLIGHT));
-
         EndPaint(hwnd, &ps);
         break;
     }
